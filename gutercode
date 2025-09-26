@@ -1,4 +1,4 @@
-/*hallo jacob
+/*
  * IP24-Skript.ino
  *
  * Dieses Programm steuert einen linienfolgenden Roboter mit Hilfe eines PI-Reglers. 
@@ -79,15 +79,13 @@ void loop() {
         motorL->setSpeed(0);
         delay(1000);
         switch (counter) {
-          case 0:
+          case 3:
             //turnLeft();
-            motorR->setSpeed(0);
-            motorL->setSpeed(0);
-            delay(1000);
-            motorD->setSpeed(20);
-            delay(5000);
-            motorD->setSpeed(0);
-
+            motorL->run(FORWARD);
+            motorR->run(FORWARD);
+            motorL->setSpeed(50);
+            motorR->setSpeed(50);
+            delay(200);
             // Servo-Motor ansteuern
             break;
 
@@ -98,9 +96,10 @@ void loop() {
             motorD->setSpeed(0);
             break;
 
-          case 3:
+          case 1:
             turnLeft();
-            delay(3000)
+            delay(500);
+            updateLineStatus();
             while(lineStatus != stop){
               turnLeft();
               updateLineStatus();
@@ -109,8 +108,10 @@ void loop() {
             
             break;
 
-          case 1:
-            while(lineStatus != onLine){
+          case 4:
+            turnLeft();
+            delay(3000);
+            while(lineStatus != onLine && lineStatus != stop){
               turnLeft();
               updateLineStatus();
             }
