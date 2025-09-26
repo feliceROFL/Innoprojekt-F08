@@ -1,0 +1,219 @@
+/*
+ * 02_driveLine.ino
+ * 
+ * Diese Datei enthält die Implementierung der grundlegenden Funktionen zur Steuerung der Linienverfolgung des Roboters. 
+ * Sie umfasst die Initialisierung und Kalibrierung der QTR-Sensoren, die Konfiguration des PI-Reglers sowie die Aktualisierung 
+ * des Linienstatus basierend auf den Sensordaten.
+ * 
+ * Enthaltene Funktionen:
+ * 
+ * 1. **initDriveLine():**
+ *    - Initialisiert den PI-Regler und konfiguriert die QTR-Sensoren zur Linienverfolgung.
+ *    - Setzt den Modus der QTR-Sensoren auf RC und definiert die verwendeten Pins.
+ *    - Verzögerung von 500 ms zur Stabilisierung nach dem Setup.
+ * 
+ * 2. **sensorKalibrieren():**
+ *    - Kalibriert die QTR-Sensoren durch wiederholtes Auslesen ihrer Werte.
+ *    - Eine eingebaute LED signalisiert den Kalibrierungsmodus.
+ * 
+ * 3. **initPI(PIController *pi, double kp, double ki, double target):**
+ *    - Initialisiert den PI-Regler mit den übergebenen Parametern für Proportionalität, Integral und Zielwert.
+ *    - Setzt den Integralterm auf Null, um den Regler für den Betrieb vorzubereiten.
+ * 
+ * 4. **updatePI(PIController *pi, double measurement):**
+ *    - Berechnet das Steuersignal basierend auf dem Fehler zwischen Soll- und Istwert.
+ *    - Aktualisiert den Integralterm und begrenzt ihn, um ein Überschwingen (Windup) zu verhindern.
+ *    - Gibt das berechnete Steuersignal zurück.
+ * 
+ * 5. **updateLineStatus():**
+ *    - Aktualisiert den aktuellen Linienstatus des Roboters, indem die Sensorwerte analysiert werden.
+ *    - Setzt den Linienstatus abhängig davon, ob und wie viele der Sensoren die Linie erkennen (onLine, stop, station, goal).
+ * 
+ * Verwendung:
+ * - Diese Datei sollte in das Hauptprogramm eingebunden werden, um die Funktionen zur Linienverfolgung zu verwenden.
+ * - Die PI-Regelung und Linienverfolgung basieren auf den QTR-Sensorwerten und den definierten Reglerparametern.
+ * 
+ * Hinweise:
+ * - Die Kalibrierung der Sensoren ist entscheidend für die Genauigkeit der Linienverfolgung.
+ * - Anpassungen der PI-Parameter (kp, ki) können notwendig sein, um die Regelung an die spezifischen Anforderungen des Roboters anzupassen.
+ */
+
+#include "03_defines.h" // Das File 03_Defines.h muss in jedem .ino File eingebunden werden.
+
+/**
+ * @brief Initialisiert die Linienverfolgung des Roboters.
+ *
+ * Diese Funktion initialisiert den PI-Regler und konfiguriert die QTR-Sensoren für die Linienverfolgung.
+ * Der PI-Regler wird mit den vorgegebenen Verstärkungsfaktoren und einem Zielwert basierend auf der
+ * mittleren Position der Sensoren initialisiert. Anschließend werden die Sensorpins festgelegt und der
+ * Emitterpin für die Infrarotbeleuchtung konfiguriert.
+ */
+void initDriveLine() {
+    initPI(&pi, REGLER_KP, REGLER_KI, (double)(maxposition / 2));  // PI-Regler initialisieren
+    qtr.setTypeRC();  // QTR-Sensoren auf RC-Modus setzen
+    qtr.setSensorPins((const uint8_t[]){ QTR_1, QTR_2, QTR_3, QTR_4, QTR_5 }, SensorCount);  // Sensorpins definieren
+    qtr.setEmitterPin(QTR_EMITTER);  // Emitterpin definieren
+    delay(500); // Kurze Verzögerung für Setup-Stabilisierung
+}
+
+/**
+ * @brief Hilfsfunktion für die Autokalibrierung.
+ *
+ * Diese Funktion stoppt den Roboter und beginnt eine Drehung nach rechts.
+ */
+void turnRight() {
+    motorR->setSpeed(0);  // Stoppen der Motoren
+    motorL->setSpeed(0);  // Stoppen der Motoren
+    delay(100);  // Kurze Verzögerung zur Stabilisierung
+    motorR->run(BACKWARD);  // Drehrichtung des rechten Motors auf Vorwärts setzen  
+    motorL->run(FORWARD);   // Drehrichtung des linken Motors auf Rückwärts setzen
+    motorR->setSpeed(40);  // Drehgeschwindgkeit setzen
+    motorL->setSpeed(40);  // Drehgeschwindgkeit setzen
+}
+
+/**
+ * @brief Hilfsfunktion für die Autokalibrierung.
+ *
+ * Diese Funktion stoppt den Roboter und beginnt eine Drehung nach links.
+ */
+void turnLeft() {
+    motorR->setSpeed(0);  // Stoppen der Motoren
+    motorL->setSpeed(0);  // Stoppen der Motoren
+    delay(100);  // Kurze Verzögerung zur Stabilisierung
+    motorR->run(FORWARD);  // Drehrichtung des rechten Motors auf Vorwärts setzen
+    motorL->run(BACKWARD);   // Drehrichtung des linken Motors auf Rückwärts setzen
+    motorR->setSpeed(40);  // Drehgeschwindgkeit setzen
+    motorL->setSpeed(40);  // Drehgeschwindgkeit setzen
+}
+
+/**
+ * @brief Kalibriert die QTR-Sensoren für die Linienverfolgung.
+ *
+ * Diese Funktion kalibriert die QTR-Sensoren, indem sie mehrfach ausgelesen werden,
+ * um maximale und minimale Werte zu erfassen. Während der Kalibrierung leuchtet die
+ * eingebaute LED des Arduino, um den Kalibrierungsmodus anzuzeigen.
+ * 
+ * Die Kalibrierung sollte folgendermassen Ablaufen:
+ * 1. Den Roboter mit dem Sensor mittig auf die Linie stellen.
+ * 2. Der Roboter fängt nun an den Sensor über die Linie zu schwenken.
+ * 3. Sobald die Orange LED vom Arduino Board erlischt, ist der Vorgang abgeschlossen.
+ * 4. Sollte der Roboter nicht die Line wiederfinden oder nach mehrfachen Kalibrieren immer noch nicht die Fahrt beginnen, 
+ *    einmal alle Anschlüsse des Sensors überprüfen
+ */
+void sensorKalibrieren() {
+    bool turn_left = true;  // Bool um die Drehrichtung abzuwechseln
+    int16_t n_turns = 3;  // Anzahl an Drehungen während der Kalibierung // sollte nicht weniger als 3 sein
+    int16_t iter_per_turn = 30;  // Iterationen pro eine Umdrehung, muss eventuell an das Gewicht des Roboters angepasst werden, ca. 20-50 
+    int16_t half_turn = iter_per_turn/2;  // Halbe Drehung zu Beginn, damit die Linie mittig ist
+    int16_t n_iter = (n_turns * iter_per_turn) + half_turn;
+    pinMode(LED_BUILTIN, OUTPUT);  // Eingebautes LED als Ausgang setzen
+    digitalWrite(LED_BUILTIN, HIGH);  // LED einschalten, um den Kalibrierungsmodus anzuzeigen
+    for (int16_t i = 0; i < n_iter; i++) {
+        if (i == 0 || (i - half_turn) % iter_per_turn == 0) {  // Der Roboter beginnt zu Drehen bei i == 0, wechselt einmal nach einer
+            if (turn_left == true){                            // halben Drehung die Richtung und macht dann volle Drehungen
+                turnLeft();  // Linksdrehung
+                turn_left = false;  // Umkehrung der Drehrichtung
+            }
+            else{
+                turnRight();  // Rechtsdrehung
+                turn_left = true;  // Umkehrung der Drehrichtung
+            }
+        }
+        qtr.calibrate();  // Sensoren kalibrieren
+    }
+    if(turn_left == true){
+        turnLeft();  // Linksdrehung bis der Roboter die Linie findet
+    }   
+    else{
+        turnRight();
+    }
+    qtr.readLineBlack(sensorValues);  // Auslesen der Sensorwerte
+    while(sensorValues[2] < 555){
+        delay(10);  // Kurze Verzögerung zur Stabilisierung
+        qtr.readLineBlack(sensorValues);  // Auslesen der Sensorwerte
+    }
+    motorR->setSpeed(0);  // Stoppen der Motoren, der Roboter hat nun die Linie gefunden
+    motorL->setSpeed(0);  // Stoppen der Motoren, der Roboter hat nun die Linie gefunden
+    delay(1000);  // Kurze Verzögerung, um das Ende dieses Kalibrierungsvorgangs anzuzeigen
+    if(sensorValues[0] > 100 || sensorValues[4] > 100){  // Überprüfen, ob Kalibrierung erfolgreich war
+        qtr.resetCalibration();  // Zurücksetzen der Kalibrierung, falls sie nicht erfolgreich war
+        sensorKalibrieren();  // Sensoren erneut kalibrieren
+    }
+    digitalWrite(LED_BUILTIN, LOW);  // LED ausschalten, um das Ende der Kalibrierung anzuzeigen
+}
+
+/**
+ * @brief Initialisiert den PI-Regler mit den vorgegebenen Parametern.
+ *
+ * Diese Funktion setzt die Verstärkungsfaktoren (kp, ki) sowie den Zielwert (target)
+ * für den PI-Regler. Zusätzlich wird der Integralterm auf Null gesetzt, um den Regler
+ * auf den Betrieb vorzubereiten.
+ *
+ * @param pi Zeiger auf die PIController-Struktur, die initialisiert werden soll.
+ * @param kp Proportionaler Verstärkungsfaktor.
+ * @param ki Integralverstärkungsfaktor.
+ * @param target Zielwert (Sollwert) des Reglers.
+ */
+void initPI(PIController *pi, double kp, double ki, double target) {
+    pi->kp = kp;          // Proportionalen Verstärkungsfaktor setzen
+    pi->ki = ki;          // Integralverstärkungsfaktor setzen
+    pi->target = target;  // Gewünschten Zielwert setzen
+    pi->integral = 0;     // Integralterm auf Null setzen
+}
+
+/**
+ * @brief Aktualisiert den PI-Regler und berechnet das Steuersignal.
+ *
+ * Diese Funktion berechnet das Steuersignal basierend auf dem Fehler zwischen dem
+ * aktuellen Messwert (measurement) und dem Zielwert (target). Der Fehler wird
+ * proportional (durch kp) und über die Zeit (durch ki) aufintegriert, um eine
+ * möglichst genaue Regelung zu gewährleisten.
+ *
+ * @param pi Zeiger auf die PIController-Struktur, die den Regler enthält.
+ * @param measurement Der aktuelle Messwert, der mit dem Zielwert verglichen wird.
+ * @return Das berechnete Steuersignal, das an die Motoren weitergegeben wird.
+ */
+double updatePI(PIController *pi, double measurement) {
+    double error = pi->target - measurement;  // Fehler berechnen als Differenz zwischen Sollwert und aktuellem Wert
+    
+    // Fehler skalieren und Integralterm aufsummieren
+    pi->integral += map(error, -1 * (maxposition / 2), maxposition / 2, -255, 255) / 4;
+    
+    // Integral begrenzen, um Windup zu verhindern
+    pi->integral = constrain(pi->integral, -1 * highestIntegral, highestIntegral);
+
+    // Berechnung des Steuersignals als Summe von Proportional- und Integralterm
+    double control = pi->kp * error + pi->ki * pi->integral;
+    
+    return control;  // Steuersignal zurückgeben
+}
+
+/**
+ * @brief Aktualisiert den Linienstatus basierend auf den Sensorwerten.
+ *
+ * Diese Funktion liest die aktuellen Werte der QTR-Sensoren aus und bestimmt basierend
+ * auf diesen Werten den aktuellen Linienstatus des Roboters (onLine, stop, station, goal).
+ * Der Status wird durch die Erkennung von bestimmten Mustern auf der Linie (oder deren Fehlen)
+ * durch die Sensoren bestimmt.
+ */
+void updateLineStatus() {
+    for (uint8_t i = 0; i < SensorCount; i++) {
+        if (sensorValues[i] > 555) {  // Schwellenwert für den QTR-Sensor, um zu bestimmen, ob die Linie erkannt wird
+            sensorStatus[i] = 1;  // Sensor erkennt die Linie
+        } else {
+            sensorStatus[i] = 0;  // Sensor erkennt die Linie nicht
+        }
+    }
+    
+    // Bestimmen des aktuellen Linienstatus basierend auf den Sensorwerten
+    if (sensorStatus[0] == 1 && sensorStatus[4] == 1 && (sensorStatus[1] == 0 || sensorStatus[2] == 0 || sensorStatus[3] == 0)) {
+        lineStatus = station;  // Muster: Schwarz-Weiss-Weiss-Weiss-Schwarz (Station)
+    } else if (sensorStatus[0] == 1 && sensorStatus[1] == 1 && sensorStatus[2] == 1 && sensorStatus[3] == 1 && sensorStatus[4] == 1) {
+        lineStatus = stop;  // Muster: Schwarz-Schwarz-Schwarz-Schwarz-Schwarz (Stop)
+    } else if (sensorStatus[0] == 0 && sensorStatus[1] == 0 && sensorStatus[2] == 0 && sensorStatus[3] == 0 && sensorStatus[4] == 0) {
+        lineStatus = goal;  // Muster: Weiss-Weiss-Weiss-Weiss-Weiss (Ziel)
+    } else {
+        lineStatus = onLine;  // Muster: nahezu Weiss-Weiss-Schwarz-Weiss-Weiss (Linie-folgen)
+    }
+}
+
