@@ -185,6 +185,14 @@ void loop() {
       }
 
       default:
+        updateLineStatus();
+        if (lineStatus == stop) {
+          motorR->run(FORWARD);
+          motorR->setSpeed(40);
+          motorL->run(FORWARD);     // linkes Rad rückwärts
+          motorL->setSpeed(40);
+          delay(1000);
+        }
         break;
     }
 
