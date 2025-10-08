@@ -63,5 +63,8 @@ void setup()
 
 
 void loop() {
+
+  motorD->run(FORWARD);
+  motorD->setSpeed(100);
   
  }
