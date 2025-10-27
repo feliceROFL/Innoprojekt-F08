@@ -1,0 +1,32 @@
+#include <Wire.h>
+#include <Adafruit_MotorShield.h>
+#include <Servo.h>
+
+// Erstellen einer Instanz des Motorschields
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+Adafruit_DCMotor *motor1 = AFMS.getMotor(1);
+Adafruit_DCMotor *motor2 = AFMS.getMotor(2);
+Adafruit_DCMotor *motor3 = AFMS.getMotor(3);
+Adafruit_DCMotor *motor4 = AFMS.getMotor(4);  
+
+// Servo Objekte 
+Servo servo1;
+Servo servo2;
+Servo servo3;
+
+void setup() {
+  // Initialisieren des Motorschields
+  AFMS.begin();
+
+  // Anfangsgeschwindigkeit setzen (von 0 bis 255)
+  motor3->setSpeed(50);
+  // Anfangsrichtung setze
+  motor3->run(FORWARD);
+  delay(1000)
+  motor3->setSpeed(0)
+  
+  
+}
+  
+  // Die DC-Motoren drehen durchgehend
+}
