@@ -1,0 +1,43 @@
+/*
+ * Inspiriert von ArduinoGetStarted.com
+ * Tutorial page: https://arduinogetstarted.com/tutorials/arduino-button-count-lcd
+ 
+ */
+
+
+#include <ezButton.h>
+
+
+ezButton button13(13);  // create ezButton object that attach to pin 13;
+ezButton button2(2);
+unsigned long lastCount = 0;
+
+void setup() {
+  Serial.begin(9600);
+
+  button13.setDebounceTime(10); // set debounce time to 10 milliseconds
+  button13.setCountMode(COUNT_FALLING);
+  button2.setCountMode(50);
+}
+
+void loop() {
+
+
+  button13.loop(); // MUST call the loop() function first 
+  button2.loop(); // sonst merkts nicht wenn man den knopf drückt
+   
+ if(button2.isPressed()){
+    Serial.println("reset");
+    button13.resetCount();
+  }
+  unsigned long count = button13.getCount();
+  if (lastCount != count) {
+    Serial.println(count); // print count to Serial Monitor
+
+  
+
+    lastCount != count;
+  }
+
+ 
+}
