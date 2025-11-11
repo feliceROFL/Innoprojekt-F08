@@ -1,0 +1,142 @@
+/*
+ * IP24-Skript.ino
+ *
+ * Dieses Programm steuert einen linienfolgenden Roboter mit Hilfe eines PI-Reglers. 
+ * Der Roboter verwendet QTR-Sensoren (Infrarot Sensor) zur Linienverfolgung und steuert zwei Gleichstrommotoren 
+ * über ein Adafruit-Motor-Shield. Der PI-Regler berechnet die notwendigen Anpassungen 
+ * der Motorgeschwindigkeit, um den Roboter auf der Linie zu halten. 
+ * Es gibt verschiedene Linienstatus (onLine, stop, station, goal), die je nach 
+ * Sensorwerten aktualisiert werden und spezifische Aktionen auslösen.
+ * 
+ * Enthaltene Funktionen:
+ * 
+ * 1. **setup():**
+ *    - Diese Funktion wird einmalig beim Starten des Programms aufgerufen.
+ *    - Initialisiert die wichtigsten Module und Systeme des Roboters:
+ *      - **initMotorShield():** Initialisiert das Motorschield zur Steuerung der Motoren.
+ *      - **initDriveLine():** Initialisiert das System zur Linienverfolgung des Roboters.
+ *      - **sensorKalibrieren():** Führt eine Kalibrierung der Sensoren durch, um eine zuverlässige Linienerkennung zu gewährleisten.
+ *    - Dieser Abschnitt bietet auch Platz für benutzerdefinierte Setup-Funktionen, die vom Benutzer hinzugefügt werden können.
+ * 
+ * 2. **loop():**
+ *    - Diese Funktion wird kontinuierlich in einer Endlosschleife ausgeführt und bildet das Herzstück des Roboterbetriebs.
+ *    - Der Roboter führt folgende Hauptaufgaben aus:
+ *      - **Linienverfolgung:** Liest die aktuelle Position der Linie anhand der Sensoren.
+ *      - **PI-Regelung:** Aktualisiert den PI-Regler mit der aktuellen Linienposition und berechnet das Steuersignal.
+ *      - **Motorkontrolle:** Passt die Motorgeschwindigkeiten basierend auf dem berechneten Steuersignal an.
+ *      - **Linienstatus-Überwachung:** Überwacht kontinuierlich den Status der Linie und reagiert auf Veränderungen:
+ *        - **stop:** Hält den Roboter an.
+ *        - **station:** Führt eine benutzerdefinierte Aktion bei Erreichen einer Station aus.
+ *        - **goal:** Schaltet eine LED ein, wenn das Ziel erreicht ist.
+ *        - **default:** Schaltet die LED aus, wenn kein besonderes Ereignis vorliegt.
+ *    - Ein Zähler überwacht, wie lange der Roboter im Zielzustand bleibt und stoppt die Motoren nach einer definierten Zeit.
+ *    - Der `delay(25)`-Aufruf sorgt für eine kleine Verzögerung, um die Stabilität des Regelkreises zu gewährleisten.
+ * 
+ * Verwendung:
+ * - Dieses Skript sollte auf den Mikrocontroller hochgeladen werden, um den Roboter zu steuern.
+ * - Die `setup()`-Funktion dient der Initialisierung, während die `loop()`-Funktion kontinuierlich die Roboterfunktionen ausführt.
+ * 
+ * Hinweise:
+ * - Die Kalibrierung der Sensoren ist entscheidend für eine zuverlässige Linienverfolgung.
+ * - Der PI-Regler sollte optimal abgestimmt sein, um eine präzise Steuerung der Motoren zu gewährleisten.
+ * - Benutzerdefinierte Aktionen können in den vorgesehenen Abschnitten des Skripts eingefügt werden.
+ */
+
+#include "03_defines.h" // Das File 03_Defines.h muss in jedem .ino File eingebunden werden.
+#include "ServoEasing.hpp"
+
+
+// Die Setup-Funktion wird einmalig beim Start des Programms aufgerufen. 
+// Hier werden alle notwendigen Initialisierungen des Roboters durchgeführt.
+void setup()
+{
+  initMotorShield();   // Initialisiert das Motorschield zur Steuerung der Motoren.
+  initDriveLine();     // Initialisiert die Linienverfolgungssensoren des Roboters.
+  sensorKalibrieren(); // Kalibriert die Sensoren durch mehrfache Messungen, um die Genauigkeit zu verbessern.
+
+  Servo1.attach(SERVOPIN1,350,2600);
+  ServoEasing Servo1;
+  /****************************
+  * Benutzerdefinierte Setup-Funktionen können hier hinzugefügt werden.
+  ****************************/
+}
+
+// Die Loop-Funktion wird kontinuierlich ausgeführt, solange der Roboter eingeschaltet ist. 
+// Sobald das Programm das Ende der Funktion erreicht, beginnt es wieder von vorne.
+
+int counter = 1;
+
+void loop() {
+  
+  int position = qtr.readLineBlack(sensorValues);
+  double controlSignal = updatePI(&pi, position);
+
+  setMotorSpeeds(controlSignal);
+  updateLineStatus();
+  
+  
+  if (lineStatus != lineOldStatus) {
+    switch (lineStatus) {
+
+  case stop:
+    // Stop-Reaktion
+    motorR->setSpeed(0);
+    motorL->setSpeed(0);
+    delay(1000);
+
+    switch (counter) {
+      case 1: {
+        break;
+      }
+
+      case 2: {
+        break;
+      }
+
+      case 3: {
+        break;
+      }
+        
+      case 4: {
+        break;
+      }
+
+      case 5: {
+        break;
+      }
+
+      default:
+        updateLineStatus();
+        if (lineStatus == stop) {
+          motorR->run(FORWARD);
+          motorR->setSpeed(40);
+          motorL->run(FORWARD);     // linkes Rad rückwärts
+          motorL->setSpeed(40);
+          delay(1000);
+        }
+        break;
+    }
+
+    // Nur bei STOP weiterzählen
+    if (counter < 6) counter++;
+    break;
+
+  case station:
+    motorR->setSpeed(0);
+    motorL->setSpeed(0);
+    delay(3000);
+    break;
+
+  case goal:
+    digitalWrite(LED_BUILTIN, HIGH);
+    break;
+
+  default:
+    digitalWrite(LED_BUILTIN, LOW);
+    break;
+}
+  }
+
+  
+  delay(25);
+}
